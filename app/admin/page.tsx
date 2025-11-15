@@ -193,6 +193,8 @@ function AdminDashboard({ onLogout, backendStatus, backendUrl }: { onLogout: () 
   const [files, setFiles] = useState<any[]>([])
   const [uploading, setUploading] = useState(false)
   const [uploadMessage, setUploadMessage] = useState('')
+  const [downloading, setDownloading] = useState<string | null>(null)
+  const [openMenu, setOpenMenu] = useState<string | null>(null)
 
   useEffect(() => {
     if (backendStatus === 'online') {
@@ -255,6 +257,69 @@ function AdminDashboard({ onLogout, backendStatus, backendUrl }: { onLogout: () 
     }
   }
 
+  const handleDownloadFile = async (filename: string) => {
+    try {
+      setDownloading(filename)
+      const token = localStorage.getItem('admin_token')
+      const response = await fetch(`${backendUrl}/download/${encodeURIComponent(filename)}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      })
+
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        setOpenMenu(null)
+      } else {
+        alert('Download failed')
+      }
+    } catch (error) {
+      alert('Cannot download file - backend is offline')
+    } finally {
+      setDownloading(null)
+    }
+  }
+
+  const getFilePreview = (filename: string) => {
+    const ext = filename.split('.').pop()?.toLowerCase()
+    
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '')) {
+      return (
+        <div className="w-12 h-12 bg-gradient-to-br from-primary/30 to-accent/30 rounded flex items-center justify-center">
+          <svg className="w-6 h-6 text-primary" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+          </svg>
+        </div>
+      )
+    } else if (['pdf'].includes(ext || '')) {
+      return (
+        <div className="w-12 h-12 bg-red-500/20 rounded flex items-center justify-center">
+          <span className="text-xs font-bold text-red-400">PDF</span>
+        </div>
+      )
+    } else if (['doc', 'docx'].includes(ext || '')) {
+      return (
+        <div className="w-12 h-12 bg-blue-500/20 rounded flex items-center justify-center">
+          <span className="text-xs font-bold text-blue-400">DOC</span>
+        </div>
+      )
+    }
+    
+    return (
+      <div className="w-12 h-12 bg-primary/20 rounded flex items-center justify-center">
+        <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+        </svg>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-background py-8 px-4">
       <div className="max-w-4xl mx-auto">
@@ -309,9 +374,41 @@ function AdminDashboard({ onLogout, backendStatus, backendUrl }: { onLogout: () 
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {files.map((file, idx) => (
-                <div key={idx} className="bg-card/50 border border-primary/10 rounded-lg p-4">
-                  <p className="text-foreground font-medium truncate">{file}</p>
-                  <p className="text-xs text-muted-foreground mt-2">Stored on server</p>
+                <div key={idx} className="bg-card/50 border border-primary/10 rounded-lg p-4 hover:border-primary/30 transition-all duration-200">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0">
+                      {getFilePreview(file)}
+                    </div>
+                    <div className="flex-1 min-w-0 flex flex-col">
+                      <p className="text-foreground font-medium truncate text-sm" title={file}>{file}</p>
+                      <p className="text-xs text-muted-foreground mt-1">Stored on server</p>
+                    </div>
+                    <div className="relative flex-shrink-0 ml-2">
+                      <button
+                        onClick={() => setOpenMenu(openMenu === file ? null : file)}
+                        className="p-2 hover:bg-primary/20 rounded-lg transition-all duration-200"
+                        title="Download options"
+                      >
+                        <svg className="w-5 h-5 text-primary" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                        </svg>
+                      </button>
+                      {openMenu === file && (
+                        <div className="absolute right-0 mt-2 w-40 bg-card border border-primary/20 rounded-lg shadow-lg z-50 animate-in fade-in">
+                          <button
+                            onClick={() => handleDownloadFile(file)}
+                            disabled={downloading === file}
+                            className="w-full text-left px-4 py-3 hover:bg-primary/10 text-foreground text-sm font-medium flex items-center gap-2 rounded-lg transition-all duration-200 disabled:opacity-50"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            {downloading === file ? 'Downloading...' : 'Download'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
