@@ -1,0 +1,323 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+
+export default function AdminPage() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking')
+  const [backendUrl, setBackendUrl] = useState('http://localhost:5000')
+  const [showUrlInput, setShowUrlInput] = useState(false)
+  const router = useRouter()
+
+  useEffect(() => {
+    const savedUrl = localStorage.getItem('backend_url')
+    if (savedUrl) setBackendUrl(savedUrl)
+    
+    checkBackendStatus()
+    const interval = setInterval(checkBackendStatus, 5000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const checkBackendStatus = async () => {
+    try {
+      const url = localStorage.getItem('backend_url') || 'http://localhost:5000'
+      const response = await fetch(`${url}/health`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      setBackendStatus(response.ok ? 'online' : 'offline')
+    } catch {
+      setBackendStatus('offline')
+    }
+  }
+
+  const handleUpdateBackendUrl = (newUrl: string) => {
+    localStorage.setItem('backend_url', newUrl)
+    setBackendUrl(newUrl)
+    setShowUrlInput(false)
+    checkBackendStatus()
+  }
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsLoading(true)
+    setError('')
+
+    try {
+      if (backendStatus === 'offline') {
+        setError('Backend is offline. Start the Python server to login.')
+        setIsLoading(false)
+        return
+      }
+
+      const response = await fetch(`${backendUrl}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        setIsAuthenticated(true)
+        localStorage.setItem('admin_token', data.token)
+        setUsername('')
+        setPassword('')
+      } else {
+        setError(data.message || 'Login failed')
+      }
+    } catch {
+      setError('Cannot connect to backend. Verify the server URL is correct.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleLogout = () => {
+    setIsAuthenticated(false)
+    localStorage.removeItem('admin_token')
+  }
+
+  if (isAuthenticated) {
+    return <AdminDashboard onLogout={handleLogout} backendStatus={backendStatus} backendUrl={backendUrl} />
+  }
+
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center px-4">
+      <div className="max-w-md w-full glass border border-primary/30 rounded-lg p-8">
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-foreground mb-2">Admin Access</h1>
+          <p className="text-muted-foreground">Secret Login Portal</p>
+        </div>
+
+        {/* Backend Status and URL */}
+        <div className="mb-6 space-y-3">
+          <div className="p-3 rounded-lg bg-background/50 border border-primary/20">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 flex-1">
+                <div className={`w-2 h-2 rounded-full ${backendStatus === 'online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                <span className="text-sm text-muted-foreground">Backend: <span className={backendStatus === 'online' ? 'text-green-400' : 'text-red-400'}>{backendStatus.toUpperCase()}</span></span>
+              </div>
+              <button
+                onClick={() => setShowUrlInput(!showUrlInput)}
+                className="px-3 py-1 text-xs bg-primary/20 text-primary hover:bg-primary/30 rounded transition-all duration-200 font-medium"
+              >
+                {showUrlInput ? 'Hide' : 'Edit'}
+              </button>
+            </div>
+          </div>
+
+          {showUrlInput && (
+            <div className="space-y-2 animate-in fade-in">
+              <input
+                type="text"
+                value={backendUrl}
+                onChange={(e) => setBackendUrl(e.target.value)}
+                placeholder="https://your-backend.com"
+                className="w-full px-3 py-2 bg-card border border-primary/20 rounded text-sm text-foreground focus:outline-none focus:border-primary/50"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleUpdateBackendUrl(backendUrl)}
+                  className="flex-1 px-3 py-1 bg-primary text-primary-foreground rounded text-sm hover:bg-primary/90 transition-all"
+                >
+                  Save URL
+                </button>
+                <button
+                  onClick={() => setShowUrlInput(false)}
+                  className="flex-1 px-3 py-1 bg-background/50 border border-primary/20 text-foreground rounded text-sm hover:bg-background transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">Username</label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Enter username"
+              className="w-full px-4 py-2 bg-card border border-primary/20 rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary/50"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter password"
+              className="w-full px-4 py-2 bg-card border border-primary/20 rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary/50"
+            />
+          </div>
+
+          {error && (
+            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={isLoading || backendStatus === 'offline'}
+            className="w-full px-4 py-2 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isLoading ? 'Logging in...' : 'Login'}
+          </button>
+        </form>
+
+        <div className="mt-6 p-4 bg-background/50 border border-accent/20 rounded-lg text-xs text-muted-foreground">
+          <p className="font-semibold mb-2 text-foreground">Setup:</p>
+          <ol className="space-y-1 list-decimal list-inside">
+            <li>Run backend or connect to hosted server</li>
+            <li>Default: admin / admin123</li>
+            <li>Click Edit to change backend URL</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AdminDashboard({ onLogout, backendStatus, backendUrl }: { onLogout: () => void; backendStatus: string; backendUrl: string }) {
+  const [files, setFiles] = useState<any[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [uploadMessage, setUploadMessage] = useState('')
+
+  useEffect(() => {
+    if (backendStatus === 'online') {
+      fetchFiles()
+    }
+  }, [backendStatus])
+
+  const fetchFiles = async () => {
+    try {
+      const token = localStorage.getItem('admin_token')
+      const response = await fetch(`${backendUrl}/files`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setFiles(data.files || [])
+      }
+    } catch {
+      console.log('Could not fetch files - backend offline')
+    }
+  }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.currentTarget.files
+    if (!fileList) return
+
+    setUploading(true)
+    setUploadMessage('')
+
+    try {
+      if (backendStatus === 'offline') {
+        setUploadMessage('Backend is offline. Files cannot be uploaded.')
+        setUploading(false)
+        return
+      }
+
+      const formData = new FormData()
+      for (let i = 0; i < fileList.length; i++) {
+        formData.append('files', fileList[i])
+      }
+
+      const token = localStorage.getItem('admin_token')
+      const response = await fetch(`${backendUrl}/upload`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData,
+      })
+
+      if (response.ok) {
+        setUploadMessage('Files uploaded successfully!')
+        fetchFiles()
+        e.currentTarget.value = ''
+      } else {
+        setUploadMessage('Upload failed')
+      }
+    } catch {
+      setUploadMessage('Cannot upload - backend is offline')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-background py-8 px-4">
+      <div className="max-w-4xl mx-auto">
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground mb-2">Admin Dashboard</h1>
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${backendStatus === 'online' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+              <span className="text-sm text-muted-foreground">Backend: {backendStatus.toUpperCase()}</span>
+            </div>
+          </div>
+          <button
+            onClick={onLogout}
+            className="px-4 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-all duration-300"
+          >
+            Logout
+          </button>
+        </div>
+
+        <div className="glass border border-primary/30 rounded-lg p-8 mb-8">
+          <h2 className="text-xl font-semibold text-foreground mb-4">Upload Files</h2>
+          <div className="border-2 border-dashed border-primary/30 rounded-lg p-8 text-center hover:border-primary/50 transition-all">
+            <input
+              type="file"
+              multiple
+              onChange={handleFileUpload}
+              disabled={uploading || backendStatus === 'offline'}
+              accept="image/*,.pdf,.doc,.docx"
+              className="hidden"
+              id="file-upload"
+            />
+            <label htmlFor="file-upload" className="cursor-pointer block">
+              <svg className="w-12 h-12 mx-auto mb-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              <p className="text-foreground font-semibold mb-1">Click to upload or drag and drop</p>
+              <p className="text-muted-foreground text-sm">Photos and documents (PDF, DOC, DOCX)</p>
+            </label>
+          </div>
+
+          {uploadMessage && (
+            <div className={`mt-4 p-3 rounded-lg text-sm ${uploadMessage.includes('success') ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+              {uploadMessage}
+            </div>
+          )}
+        </div>
+
+        <div className="glass border border-primary/30 rounded-lg p-8">
+          <h2 className="text-xl font-semibold text-foreground mb-4">Uploaded Files ({files.length})</h2>
+          {files.length === 0 ? (
+            <p className="text-muted-foreground">No files uploaded yet</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {files.map((file, idx) => (
+                <div key={idx} className="bg-card/50 border border-primary/10 rounded-lg p-4">
+                  <p className="text-foreground font-medium truncate">{file}</p>
+                  <p className="text-xs text-muted-foreground mt-2">Stored on server</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
