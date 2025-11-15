@@ -190,10 +190,12 @@ export default function AdminPage() {
 }
 
 function AdminDashboard({ onLogout, backendStatus, backendUrl }: { onLogout: () => void; backendStatus: string; backendUrl: string }) {
-  const [files, setFiles] = useState<any[]>([])
+  const [imageFiles, setImageFiles] = useState<string[]>([])
+  const [documentFiles, setDocumentFiles] = useState<string[]>([])
   const [uploading, setUploading] = useState(false)
   const [uploadMessage, setUploadMessage] = useState('')
   const [downloading, setDownloading] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
   const [openMenu, setOpenMenu] = useState<string | null>(null)
 
   useEffect(() => {
@@ -210,7 +212,8 @@ function AdminDashboard({ onLogout, backendStatus, backendUrl }: { onLogout: () 
       })
       if (response.ok) {
         const data = await response.json()
-        setFiles(data.files || [])
+        setImageFiles(data.folders?.images || [])
+        setDocumentFiles(data.folders?.documents || [])
       }
     } catch {
       console.log('Could not fetch files - backend offline')
@@ -257,11 +260,11 @@ function AdminDashboard({ onLogout, backendStatus, backendUrl }: { onLogout: () 
     }
   }
 
-  const handleDownloadFile = async (filename: string) => {
+  const handleDownloadFile = async (filename: string, category: 'images' | 'documents') => {
     try {
       setDownloading(filename)
       const token = localStorage.getItem('admin_token')
-      const response = await fetch(`${backendUrl}/download/${encodeURIComponent(filename)}`, {
+      const response = await fetch(`${backendUrl}/download/${category}/${encodeURIComponent(filename)}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       })
 
@@ -283,6 +286,30 @@ function AdminDashboard({ onLogout, backendStatus, backendUrl }: { onLogout: () 
       alert('Cannot download file - backend is offline')
     } finally {
       setDownloading(null)
+    }
+  }
+
+  const handleDeleteFile = async (filename: string, category: 'images' | 'documents') => {
+    if (!confirm(`Delete ${filename}?`)) return
+
+    try {
+      setDeleting(filename)
+      const token = localStorage.getItem('admin_token')
+      const response = await fetch(`${backendUrl}/delete/${category}/${encodeURIComponent(filename)}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+      })
+
+      if (response.ok) {
+        fetchFiles()
+        setOpenMenu(null)
+      } else {
+        alert('Delete failed')
+      }
+    } catch (error) {
+      alert('Cannot delete file - backend is offline')
+    } finally {
+      setDeleting(null)
     }
   }
 
@@ -316,6 +343,68 @@ function AdminDashboard({ onLogout, backendStatus, backendUrl }: { onLogout: () 
         <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
         </svg>
+      </div>
+    )
+  }
+
+  const renderFileList = (files: string[], category: 'images' | 'documents', title: string) => {
+    return (
+      <div className="mb-8">
+        <h3 className="text-lg font-semibold text-foreground mb-4 capitalize">{title} ({files.length})</h3>
+        {files.length === 0 ? (
+          <p className="text-muted-foreground">No {title.toLowerCase()} uploaded yet</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {files.map((file, idx) => (
+              <div key={idx} className="bg-card/50 border border-primary/10 rounded-lg p-4 hover:border-primary/30 transition-all duration-200">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0">
+                    {getFilePreview(file)}
+                  </div>
+                  <div className="flex-1 min-w-0 flex flex-col">
+                    <p className="text-foreground font-medium truncate text-sm" title={file}>{file}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Stored on server</p>
+                  </div>
+                  <div className="relative flex-shrink-0 ml-2">
+                    <button
+                      onClick={() => setOpenMenu(openMenu === `${category}-${file}` ? null : `${category}-${file}`)}
+                      className="p-2 hover:bg-primary/20 rounded-lg transition-all duration-200"
+                      title="File options"
+                    >
+                      <svg className="w-5 h-5 text-primary" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                      </svg>
+                    </button>
+                    {openMenu === `${category}-${file}` && (
+                      <div className="absolute right-0 mt-2 w-40 bg-card border border-primary/20 rounded-lg shadow-lg z-50 animate-in fade-in">
+                        <button
+                          onClick={() => handleDownloadFile(file, category)}
+                          disabled={downloading === file}
+                          className="w-full text-left px-4 py-3 hover:bg-primary/10 text-foreground text-sm font-medium flex items-center gap-2 rounded-lg transition-all duration-200 disabled:opacity-50 border-b border-primary/10"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          {downloading === file ? 'Downloading...' : 'Download'}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteFile(file, category)}
+                          disabled={deleting === file}
+                          className="w-full text-left px-4 py-3 hover:bg-red-500/10 text-red-400 text-sm font-medium flex items-center gap-2 rounded-lg transition-all duration-200 disabled:opacity-50"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          {deleting === file ? 'Deleting...' : 'Delete'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     )
   }
@@ -368,51 +457,9 @@ function AdminDashboard({ onLogout, backendStatus, backendUrl }: { onLogout: () 
         </div>
 
         <div className="glass border border-primary/30 rounded-lg p-8">
-          <h2 className="text-xl font-semibold text-foreground mb-4">Uploaded Files ({files.length})</h2>
-          {files.length === 0 ? (
-            <p className="text-muted-foreground">No files uploaded yet</p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {files.map((file, idx) => (
-                <div key={idx} className="bg-card/50 border border-primary/10 rounded-lg p-4 hover:border-primary/30 transition-all duration-200">
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0">
-                      {getFilePreview(file)}
-                    </div>
-                    <div className="flex-1 min-w-0 flex flex-col">
-                      <p className="text-foreground font-medium truncate text-sm" title={file}>{file}</p>
-                      <p className="text-xs text-muted-foreground mt-1">Stored on server</p>
-                    </div>
-                    <div className="relative flex-shrink-0 ml-2">
-                      <button
-                        onClick={() => setOpenMenu(openMenu === file ? null : file)}
-                        className="p-2 hover:bg-primary/20 rounded-lg transition-all duration-200"
-                        title="Download options"
-                      >
-                        <svg className="w-5 h-5 text-primary" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-                        </svg>
-                      </button>
-                      {openMenu === file && (
-                        <div className="absolute right-0 mt-2 w-40 bg-card border border-primary/20 rounded-lg shadow-lg z-50 animate-in fade-in">
-                          <button
-                            onClick={() => handleDownloadFile(file)}
-                            disabled={downloading === file}
-                            className="w-full text-left px-4 py-3 hover:bg-primary/10 text-foreground text-sm font-medium flex items-center gap-2 rounded-lg transition-all duration-200 disabled:opacity-50"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                            </svg>
-                            {downloading === file ? 'Downloading...' : 'Download'}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          <h2 className="text-xl font-semibold text-foreground mb-6">Uploaded Files</h2>
+          {renderFileList(imageFiles, 'images', 'Images')}
+          {renderFileList(documentFiles, 'documents', 'Documents')}
         </div>
       </div>
     </div>
